@@ -599,3 +599,248 @@ else:
             use_container_width=True,
             hide_index=True
         )
+# =========================================================
+# STEP 5：株価20日・60日騰落率（キヤノン 7751）
+# =========================================================
+
+st.divider()
+st.subheader("📈 株価20日・60日騰落率")
+
+price_url = "https://api.jquants.com/v2/equities/bars/daily"
+
+price_response = requests.get(
+    price_url,
+    params={
+        "code": "7751",
+    },
+    headers=headers,
+    timeout=30,
+)
+
+st.write(
+    "株価APIステータス:",
+    price_response.status_code
+)
+
+if price_response.status_code != 200:
+
+    st.error(
+        f"株価データ取得失敗："
+        f"{price_response.status_code}"
+    )
+
+    st.write(price_response.text)
+
+else:
+
+    price_json = price_response.json()
+
+    # -----------------------------------------------------
+    # 返却データのキーを確認しながら取得
+    # -----------------------------------------------------
+
+    price_data = (
+        price_json.get("data")
+        or price_json.get("daily_quotes")
+        or []
+    )
+
+    if not price_data:
+
+        st.warning(
+            "株価データがありません。"
+        )
+
+        st.write(
+            "APIレスポンスのキー:",
+            list(price_json.keys())
+        )
+
+    else:
+
+        price_df = pd.DataFrame(price_data)
+
+        # -------------------------------------------------
+        # 日付を整形
+        # -------------------------------------------------
+
+        price_df["Date"] = pd.to_datetime(
+            price_df["Date"],
+            errors="coerce"
+        )
+
+        price_df = (
+            price_df
+            .dropna(subset=["Date"])
+            .sort_values("Date")
+            .reset_index(drop=True)
+        )
+
+        # -------------------------------------------------
+        # 調整済み終値を優先
+        # -------------------------------------------------
+
+        close_candidates = [
+            "AdjClose",
+            "AdjustmentClose",
+            "Close",
+        ]
+
+        close_col = None
+
+        for col in close_candidates:
+
+            if col in price_df.columns:
+
+                close_col = col
+                break
+
+        if close_col is None:
+
+            st.error(
+                "終値列が見つかりません。"
+            )
+
+            st.write(
+                "取得列:",
+                price_df.columns.tolist()
+            )
+
+        else:
+
+            price_df[close_col] = pd.to_numeric(
+                price_df[close_col],
+                errors="coerce"
+            )
+
+            price_df = (
+                price_df
+                .dropna(subset=[close_col])
+                .reset_index(drop=True)
+            )
+
+            # ---------------------------------------------
+            # 20日・60日を計算
+            # ---------------------------------------------
+
+            if len(price_df) < 61:
+
+                st.warning(
+                    f"株価データが不足しています："
+                    f"{len(price_df)}営業日"
+                )
+
+            else:
+
+                latest_price = price_df.iloc[-1]
+                price_20 = price_df.iloc[-21]
+                price_60 = price_df.iloc[-61]
+
+                latest_close = latest_price[close_col]
+                close_20 = price_20[close_col]
+                close_60 = price_60[close_col]
+
+                return_20 = (
+                    latest_close / close_20 - 1
+                ) * 100
+
+                return_60 = (
+                    latest_close / close_60 - 1
+                ) * 100
+
+                # -----------------------------------------
+                # 表示
+                # -----------------------------------------
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+
+                    st.metric(
+                        "最新終値",
+                        f"{latest_close:,.1f}円"
+                    )
+
+                    st.caption(
+                        latest_price["Date"].date()
+                    )
+
+                with col2:
+
+                    st.metric(
+                        "20営業日騰落率",
+                        f"{return_20:+.2f}%",
+                        delta=(
+                            f"{latest_close-close_20:+,.1f}円"
+                        )
+                    )
+
+                    st.caption(
+                        f"{price_20['Date'].date()} "
+                        f"{close_20:,.1f}円"
+                    )
+
+                with col3:
+
+                    st.metric(
+                        "60営業日騰落率",
+                        f"{return_60:+.2f}%",
+                        delta=(
+                            f"{latest_close-close_60:+,.1f}円"
+                        )
+                    )
+
+                    st.caption(
+                        f"{price_60['Date'].date()} "
+                        f"{close_60:,.1f}円"
+                    )
+
+                # -----------------------------------------
+                # 業績 × 株価を並べる
+                # -----------------------------------------
+
+                st.write("### 🪃 業績 × 株価")
+
+                comparison_df = pd.DataFrame(
+                    {
+                        "観測項目": [
+                            "売上高前年比",
+                            "営業利益前年比",
+                            "会社予想修正率",
+                            "株価20営業日",
+                            "株価60営業日",
+                        ],
+                        "変化率（%）": [
+                            sales_growth,
+                            op_growth,
+                            fop_change_pct,
+                            return_20,
+                            return_60,
+                        ],
+                    }
+                )
+
+                st.dataframe(
+                    comparison_df,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                # -----------------------------------------
+                # 仮の乖離表示
+                # ※まだ正式Scoreではない
+                # -----------------------------------------
+
+                if (
+                    op_growth is not None
+                    and
+                    op_growth > 0
+                    and
+                    return_20 < 0
+                ):
+
+                    st.success(
+                        "🪃 業績改善に対して、"
+                        "直近20営業日の株価は逆方向です。"
+                        "乖離候補として観測します。"
+                    )
