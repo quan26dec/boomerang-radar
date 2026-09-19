@@ -1,9 +1,9 @@
 import time
+import io
 
 import streamlit as st
 import requests
 import pandas as pd
-
 
 # =========================================================
 # 基本設定
