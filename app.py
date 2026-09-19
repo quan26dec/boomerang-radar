@@ -1309,41 +1309,6 @@ latest_price_df["Return60"] = (
     - 1
 ) * 100
 
-st.write("🧪 精工技研 分割調整後チェック")
-
-st.dataframe(
-    bulk_all_df[
-        bulk_all_df["Code"] == "68340"
-    ][
-        [
-            "Date",
-            "C",
-            "AdjFactor",
-            "CumAdjFactor",
-            "AdjClose",
-            "Close20",
-            "Close60",
-        ]
-    ].tail(80),
-    use_container_width=True,
-    hide_index=True,
-)
-
-st.write(
-    "精工技研 最新Return",
-    latest_price_df[
-        latest_price_df["Code"] == "68340"
-    ][
-        [
-            "Code",
-            "C",
-            "AdjClose",
-            "Return20",
-            "Return60",
-        ]
-    ]
-)
-
 # 60営業日取れていない銘柄は除外
 valid_price_df = (
     latest_price_df
