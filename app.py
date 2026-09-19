@@ -1201,27 +1201,78 @@ st.dataframe(
 )
 
 # =========================================================
-# 7. 20営業日前・60営業日前
+# 7. 株式分割調整済み終値を作成
+# =========================================================
+
+# Code → Date順になっていることを確認
+bulk_all_df = (
+    bulk_all_df
+    .sort_values(
+        ["Code", "Date"]
+    )
+    .reset_index(drop=True)
+)
+
+# AdjFactorが欠損している日は1.0
+bulk_all_df["AdjFactor"] = (
+    pd.to_numeric(
+        bulk_all_df["AdjFactor"],
+        errors="coerce"
+    )
+    .fillna(1.0)
+)
+
+# ---------------------------------------------------------
+# 将来のAdjFactorを累積
 #
-# groupby.apply()を使わずshift()で高速計算
+# 過去の株価を現在基準へ調整する
+# ---------------------------------------------------------
+
+bulk_all_df["CumAdjFactor"] = (
+    bulk_all_df
+    .groupby("Code")["AdjFactor"]
+    .transform(
+        lambda s:
+        s.iloc[::-1]
+        .cumprod()
+        .iloc[::-1]
+    )
+)
+
+# 当日自身のAdjFactorは翌日以降に効かせる
+bulk_all_df["CumAdjFactor"] = (
+    bulk_all_df["CumAdjFactor"]
+    /
+    bulk_all_df["AdjFactor"]
+)
+
+# 分割調整済み終値
+bulk_all_df["AdjClose"] = (
+    bulk_all_df["C"]
+    *
+    bulk_all_df["CumAdjFactor"]
+)
+
+
+# =========================================================
+# 8. 20営業日前・60営業日前
 # =========================================================
 
 bulk_all_df["Close20"] = (
     bulk_all_df
-    .groupby("Code")["C"]
+    .groupby("Code")["AdjClose"]
     .shift(20)
 )
 
-
 bulk_all_df["Close60"] = (
     bulk_all_df
-    .groupby("Code")["C"]
+    .groupby("Code")["AdjClose"]
     .shift(60)
 )
 
 
 # =========================================================
-# 8. 各銘柄の最新行だけ取得
+# 9. 各銘柄の最新行だけ取得
 # =========================================================
 
 latest_price_df = (
@@ -1236,12 +1287,12 @@ latest_price_df = (
 
 
 # =========================================================
-# 9. 騰落率計算
+# 10. 騰落率計算
 # =========================================================
 
 latest_price_df["Return20"] = (
     (
-        latest_price_df["C"]
+        latest_price_df["AdjClose"]
         /
         latest_price_df["Close20"]
     )
@@ -1251,13 +1302,47 @@ latest_price_df["Return20"] = (
 
 latest_price_df["Return60"] = (
     (
-        latest_price_df["C"]
+        latest_price_df["AdjClose"]
         /
         latest_price_df["Close60"]
     )
     - 1
 ) * 100
 
+st.write("🧪 精工技研 分割調整後チェック")
+
+st.dataframe(
+    bulk_all_df[
+        bulk_all_df["Code"] == "68340"
+    ][
+        [
+            "Date",
+            "C",
+            "AdjFactor",
+            "CumAdjFactor",
+            "AdjClose",
+            "Close20",
+            "Close60",
+        ]
+    ].tail(80),
+    use_container_width=True,
+    hide_index=True,
+)
+
+st.write(
+    "精工技研 最新Return",
+    latest_price_df[
+        latest_price_df["Code"] == "68340"
+    ][
+        [
+            "Code",
+            "C",
+            "AdjClose",
+            "Return20",
+            "Return60",
+        ]
+    ]
+)
 
 # 60営業日取れていない銘柄は除外
 valid_price_df = (
