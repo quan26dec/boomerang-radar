@@ -843,3 +843,248 @@ else:
                         "直近20営業日の株価は逆方向です。"
                         "乖離候補として観測します。"
                     )
+
+# =========================================================
+# STEP 6：全銘柄株価データ 一括取得テスト
+# =========================================================
+
+st.divider()
+st.subheader("🪃 STEP 6：全銘柄株価データ一括取得")
+
+from datetime import timedelta
+
+# ---------------------------------------------------------
+# 取得期間
+# 60営業日を確実に含むよう約120日前から取得
+# ---------------------------------------------------------
+
+today = pd.Timestamp.today().normalize()
+
+start_date = today - pd.Timedelta(days=120)
+
+st.write(
+    f"取得期間：{start_date.date()} ～ {today.date()}"
+)
+
+all_price_frames = []
+
+current_date = start_date
+
+progress_bar = st.progress(0)
+
+total_days = (today - start_date).days + 1
+processed_days = 0
+
+# ---------------------------------------------------------
+# 日付ごとに全銘柄株価を取得
+# ---------------------------------------------------------
+
+while current_date <= today:
+
+    date_str = current_date.strftime("%Y%m%d")
+
+    response = requests.get(
+        price_url,
+        params={
+            "date": date_str
+        },
+        headers=headers,
+        timeout=30,
+    )
+
+    if response.status_code == 200:
+
+        day_data = response.json().get(
+            "data",
+            []
+        )
+
+        if day_data:
+
+            day_df = pd.DataFrame(day_data)
+
+            all_price_frames.append(
+                day_df
+            )
+
+    processed_days += 1
+
+    progress_bar.progress(
+        min(
+            processed_days / total_days,
+            1.0
+        )
+    )
+
+    current_date += timedelta(days=1)
+
+# ---------------------------------------------------------
+# 結合
+# ---------------------------------------------------------
+
+if not all_price_frames:
+
+    st.error(
+        "株価データを取得できませんでした。"
+    )
+
+else:
+
+    all_price_df = pd.concat(
+        all_price_frames,
+        ignore_index=True
+    )
+
+    st.success(
+        f"株価データ取得完了："
+        f"{len(all_price_df):,}行"
+    )
+
+    # -----------------------------------------------------
+    # 東証内国株式だけに限定
+    # -----------------------------------------------------
+
+    all_price_df["Code"] = (
+        all_price_df["Code"]
+        .astype(str)
+        .str.zfill(5)
+    )
+
+    all_price_df = all_price_df[
+        all_price_df["Code"].isin(
+            auto_code_set
+        )
+    ].copy()
+
+    # -----------------------------------------------------
+    # 日付・株価整形
+    # -----------------------------------------------------
+
+    all_price_df["Date"] = pd.to_datetime(
+        all_price_df["Date"],
+        errors="coerce"
+    )
+
+    all_price_df["AdjC"] = pd.to_numeric(
+        all_price_df["AdjC"],
+        errors="coerce"
+    )
+
+    all_price_df = (
+        all_price_df
+        .dropna(
+            subset=[
+                "Date",
+                "AdjC"
+            ]
+        )
+        .sort_values(
+            [
+                "Code",
+                "Date"
+            ]
+        )
+    )
+
+    # -----------------------------------------------------
+    # 銘柄ごとに最新・20営業日前・60営業日前
+    # -----------------------------------------------------
+
+    def calculate_price_returns(group):
+
+        group = (
+            group
+            .sort_values("Date")
+            .reset_index(drop=True)
+        )
+
+        if len(group) < 61:
+
+            return pd.Series({
+                "LatestClose": None,
+                "Return20": None,
+                "Return60": None,
+            })
+
+        latest_close = group.iloc[-1]["AdjC"]
+
+        close20 = group.iloc[-21]["AdjC"]
+        close60 = group.iloc[-61]["AdjC"]
+
+        return pd.Series({
+            "LatestClose": latest_close,
+
+            "Return20":
+                (
+                    latest_close
+                    / close20
+                    - 1
+                ) * 100,
+
+            "Return60":
+                (
+                    latest_close
+                    / close60
+                    - 1
+                ) * 100,
+        })
+
+    price_summary_df = (
+        all_price_df
+        .groupby("Code")
+        .apply(
+            calculate_price_returns
+        )
+        .reset_index()
+    )
+
+    # -----------------------------------------------------
+    # 銘柄名追加
+    # -----------------------------------------------------
+
+    price_summary_df = (
+        price_summary_df
+        .merge(
+            name_map_df,
+            on="Code",
+            how="left"
+        )
+    )
+
+    # -----------------------------------------------------
+    # 表示
+    # -----------------------------------------------------
+
+    valid_price_df = (
+        price_summary_df
+        .dropna(
+            subset=[
+                "Return20",
+                "Return60"
+            ]
+        )
+        .copy()
+    )
+
+    st.success(
+        f"20日・60日計算成功："
+        f"{len(valid_price_df):,}銘柄"
+    )
+
+    st.write(
+        "### 📊 全銘柄 株価20日・60日"
+    )
+
+    st.dataframe(
+        valid_price_df[
+            [
+                "Code",
+                "CoName",
+                "LatestClose",
+                "Return20",
+                "Return60",
+            ]
+        ].head(100),
+        use_container_width=True,
+        hide_index=True,
+    )
