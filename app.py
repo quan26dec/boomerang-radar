@@ -1174,6 +1174,31 @@ st.success(
     f"{len(bulk_all_df):,}行"
 )
 
+# =========================================================
+# 🧪 精工技研 AdjFactor確認
+# =========================================================
+
+st.write("🧪 精工技研（6834）AdjFactor確認")
+
+seikoh_test_df = (
+    bulk_all_df[
+        bulk_all_df["Code"] == "68340"
+    ][
+        [
+            "Date",
+            "C",
+            "AdjFactor",
+        ]
+    ]
+    .sort_values("Date")
+    .tail(80)
+)
+
+st.dataframe(
+    seikoh_test_df,
+    use_container_width=True,
+    hide_index=True,
+)
 
 # =========================================================
 # 7. 20営業日前・60営業日前
