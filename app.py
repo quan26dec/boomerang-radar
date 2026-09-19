@@ -2948,7 +2948,7 @@ performance_merge_df = performance_merge_df.rename(
         "PrevOP": "PrevOP実績",
         "LatestOP": "LatestOP実績",
         "OPYoY": "OP前年比",
-        "Turnaround": "実績黒字転換",
+        "Turnaround": "黒字転換",
     }
 )
 
@@ -3125,7 +3125,7 @@ def classify_boomerang(row):
 
     signals = []
 
-    if row.get("実績黒字転換", False):
+    if row.get("黒字転換", False):
         signals.append("🔥実績黒転")
 
     if (
@@ -3198,7 +3198,7 @@ strong_candidate_df = valid_boomerang_df[
         |
         valid_boomerang_df["会社予想上方修正"]
         |
-        valid_boomerang_df["実績黒字転換"]
+        valid_boomerang_df["黒字転換"]
     )
     &
     (
@@ -3275,7 +3275,7 @@ display_cols = [
     "PrevOP実績",
     "LatestOP実績",
     "OP前年比",
-    "実績黒字転換",
+    "黒字転換",
     "PrevFOP",
     "LatestFOP",
     "FOP修正率",
