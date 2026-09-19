@@ -3081,6 +3081,11 @@ for col in numeric_cols:
 # ⑧ 観測用フラグ
 # =========================================================
 
+st.write(
+    "🪃 boomerang_df の列名",
+    boomerang_df.columns.tolist()
+)
+
 boomerang_df["実績改善"] = (
     boomerang_df["LatestOP実績"]
     >
