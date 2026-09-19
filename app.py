@@ -3076,26 +3076,46 @@ for col in numeric_cols:
             errors="coerce",
         )
 
+# =========================================================
+# ⑧ 銘柄名整理
+# =========================================================
+
+if "CoName_x" in boomerang_df.columns:
+    boomerang_df = boomerang_df.rename(
+        columns={
+            "CoName_x": "CoName"
+        }
+    )
+
+if "CoName_y" in boomerang_df.columns:
+    boomerang_df = boomerang_df.drop(
+        columns=["CoName_y"]
+    )
+
 
 # =========================================================
-# ⑧ 観測用フラグ
+# ⑨ 観測用フラグ
 # =========================================================
 
-st.write(
-    "🪃 boomerang_df の列名",
-    boomerang_df.columns.tolist()
+boomerang_df["実績改善"] = (
+    boomerang_df["最新OP(億円)"]
+    >
+    boomerang_df["前年OP(億円)"]
 )
 
-# =========================================================
-# ⑧ 観測用フラグ
-# =========================================================
-
-st.write(
-    "🪃 boomerang_df の列名",
-    boomerang_df.columns.tolist()
+boomerang_df["会社予想上方修正"] = (
+    boomerang_df["LatestFOP"]
+    >
+    boomerang_df["PrevFOP"]
 )
 
-st.stop()
+boomerang_df["20日株価未反応"] = (
+    boomerang_df["Return20"] <= 0
+)
+
+boomerang_df["60日株価未反応"] = (
+    boomerang_df["Return60"] <= 0
+)
 
 # =========================================================
 # ⑨ 🪃候補タイプ
