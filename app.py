@@ -1515,3 +1515,28 @@ else:
                 st.error(
                     f"財務CSV読込エラー：{e}"
                 )
+# =========================================================
+# STEP 7-3：重要そうな財務列だけ確認
+# =========================================================
+
+st.write("### 🔍 業績・予想関連の列名")
+
+important_keywords = [
+    "Sales",
+    "OP",
+    "OdP",
+    "NP",
+    "Forecast",
+    "FOP",
+]
+
+important_columns = [
+    col
+    for col in test_fin_bulk_df.columns
+    if any(
+        keyword.lower() in col.lower()
+        for keyword in important_keywords
+    )
+]
+
+st.write(important_columns)
