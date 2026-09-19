@@ -845,246 +845,468 @@ else:
                     )
 
 # =========================================================
-# STEP 6：全銘柄株価データ 一括取得テスト
+# STEP 6：全銘柄株価データ 高速Bulk版
 # =========================================================
 
 st.divider()
-st.subheader("🪃 STEP 6：全銘柄株価データ一括取得")
+st.subheader("🪃 STEP 6：全銘柄株価データ高速取得")
 
-from datetime import timedelta
+st.write("📡 J-Quants Bulk一覧取得中...")
 
-# ---------------------------------------------------------
-# 取得期間
-# 60営業日を確実に含むよう約120日前から取得
-# ---------------------------------------------------------
 
-today = pd.Timestamp.today().normalize()
+# =========================================================
+# 1. Bulk一覧取得
+# =========================================================
 
-start_date = today - pd.Timedelta(days=120)
+bulk_list_url = "https://api.jquants.com/v2/bulk/list"
 
-st.write(
-    f"取得期間：{start_date.date()} ～ {today.date()}"
+bulk_response = requests.get(
+    bulk_list_url,
+    headers=headers,
+    params={
+        "endpoint": "/equities/bars/daily"
+    },
+    timeout=30,
 )
 
-all_price_frames = []
+if bulk_response.status_code != 200:
+    st.error(
+        f"Bulk一覧取得エラー："
+        f"{bulk_response.status_code}"
+    )
+    st.stop()
 
-current_date = start_date
+bulk_data = bulk_response.json()
+
+bulk_files = bulk_data.get("data", [])
+
+if not bulk_files:
+    st.error(
+        "Bulkファイル一覧が取得できませんでした。"
+    )
+    st.stop()
+
+
+# =========================================================
+# 2. Historical / Live 分離
+# =========================================================
+
+live_bulk_files = [
+    item
+    for item in bulk_files
+    if "/live/" in item.get("Key", "")
+]
+
+historical_bulk_files = [
+    item
+    for item in bulk_files
+    if "/historical/" in item.get("Key", "")
+]
+
+if not live_bulk_files and not historical_bulk_files:
+    st.error(
+        "利用可能なBulkファイルがありません。"
+    )
+    st.stop()
+
+
+# =========================================================
+# 3. 読み込むBulkを決定
+#
+# 🪃は60営業日前まで必要。
+# まず historical 直近3ファイル + live全部で試す。
+# =========================================================
+
+recent_historical_files = (
+    historical_bulk_files[-3:]
+)
+
+bulk_target_files = (
+    recent_historical_files
+    + live_bulk_files
+)
+
+# Key重複除去
+unique_files = {}
+
+for item in bulk_target_files:
+
+    key = item.get("Key")
+
+    if key:
+        unique_files[key] = item
+
+bulk_target_files = list(
+    unique_files.values()
+)
+
+st.write(
+    f"📦 読み込み対象Bulk："
+    f"{len(bulk_target_files)}ファイル"
+)
+
+
+# =========================================================
+# 4. Bulkデータ取得
+# =========================================================
+
+bulk_get_url = (
+    "https://api.jquants.com/v2/bulk/get"
+)
+
+bulk_dfs = []
 
 progress_bar = st.progress(0)
 
-total_days = (today - start_date).days + 1
-processed_days = 0
+status_text = st.empty()
 
-# ---------------------------------------------------------
-# 日付ごとに全銘柄株価を取得
-# ---------------------------------------------------------
+total_files = len(bulk_target_files)
 
-while current_date <= today:
 
-    date_str = current_date.strftime("%Y%m%d")
+for i, bulk_item in enumerate(
+    bulk_target_files
+):
 
-    response = requests.get(
-        price_url,
-        params={
-            "date": date_str
-        },
+    item_key = bulk_item["Key"]
+
+    status_text.write(
+        f"📥 データ取得中 "
+        f"{i + 1}/{total_files}"
+    )
+
+    # ---------------------------------------------
+    # Download URL取得
+    # ---------------------------------------------
+
+    item_get_response = requests.get(
+        bulk_get_url,
         headers=headers,
+        params={
+            "key": item_key
+        },
         timeout=30,
     )
 
-    if response.status_code == 200:
+    if item_get_response.status_code != 200:
 
-        day_data = response.json().get(
-            "data",
-            []
+        st.warning(
+            f"取得失敗：{item_key}"
         )
 
-        if day_data:
+        continue
 
-            day_df = pd.DataFrame(day_data)
+    item_get_data = (
+        item_get_response.json()
+    )
 
-            all_price_frames.append(
-                day_df
-            )
+    item_download_url = (
+        item_get_data.get("url")
+    )
 
-    processed_days += 1
+    if not item_download_url:
+
+        st.warning(
+            f"Download URLなし："
+            f"{item_key}"
+        )
+
+        continue
+
+    # ---------------------------------------------
+    # gzip CSVダウンロード
+    # ---------------------------------------------
+
+    item_file_response = requests.get(
+        item_download_url,
+        timeout=60,
+    )
+
+    if item_file_response.status_code != 200:
+
+        st.warning(
+            f"ファイルDL失敗："
+            f"{item_key}"
+        )
+
+        continue
+
+    # ---------------------------------------------
+    # CSV読込
+    # ---------------------------------------------
+
+    try:
+
+        item_df = pd.read_csv(
+            io.BytesIO(
+                item_file_response.content
+            ),
+            compression="gzip",
+            usecols=[
+                "Date",
+                "Code",
+                "AdjC",
+            ],
+            dtype={
+                "Code": str
+            },
+        )
+
+        bulk_dfs.append(
+            item_df
+        )
+
+    except Exception as e:
+
+        st.warning(
+            f"CSV読込失敗："
+            f"{item_key} / {e}"
+        )
 
     progress_bar.progress(
-        min(
-            processed_days / total_days,
-            1.0
-        )
+        (i + 1) / total_files
     )
 
-    current_date += timedelta(days=1)
 
-# ---------------------------------------------------------
-# 結合
-# ---------------------------------------------------------
+progress_bar.empty()
+status_text.empty()
 
-if not all_price_frames:
+
+if not bulk_dfs:
 
     st.error(
-        "株価データを取得できませんでした。"
+        "日足データを取得できませんでした。"
     )
 
-else:
+    st.stop()
 
-    all_price_df = pd.concat(
-        all_price_frames,
-        ignore_index=True
+
+# =========================================================
+# 5. 全Bulk結合
+# =========================================================
+
+st.write(
+    "🪃 日足データ結合中..."
+)
+
+bulk_all_df = pd.concat(
+    bulk_dfs,
+    ignore_index=True,
+)
+
+
+# =========================================================
+# 6. データ整形
+# =========================================================
+
+bulk_all_df["Code"] = (
+    bulk_all_df["Code"]
+    .astype(str)
+    .str.zfill(5)
+)
+
+# 東証内国株式のみ
+bulk_all_df = bulk_all_df[
+    bulk_all_df["Code"].isin(
+        auto_code_set
     )
+].copy()
 
-    st.success(
-        f"株価データ取得完了："
-        f"{len(all_price_df):,}行"
+
+bulk_all_df["Date"] = pd.to_datetime(
+    bulk_all_df["Date"],
+    errors="coerce",
+)
+
+
+bulk_all_df["AdjC"] = pd.to_numeric(
+    bulk_all_df["AdjC"],
+    errors="coerce",
+)
+
+
+bulk_all_df = bulk_all_df.dropna(
+    subset=[
+        "Code",
+        "Date",
+        "AdjC",
+    ]
+)
+
+
+# Historical / Liveの重複除去
+bulk_all_df = (
+    bulk_all_df
+    .drop_duplicates(
+        subset=[
+            "Code",
+            "Date",
+        ],
+        keep="last",
     )
+)
 
-    # -----------------------------------------------------
-    # 東証内国株式だけに限定
-    # -----------------------------------------------------
 
-    all_price_df["Code"] = (
-        all_price_df["Code"]
-        .astype(str)
-        .str.zfill(5)
+# Code → Date順
+bulk_all_df = (
+    bulk_all_df
+    .sort_values(
+        [
+            "Code",
+            "Date",
+        ]
     )
+    .reset_index(drop=True)
+)
 
-    all_price_df = all_price_df[
-        all_price_df["Code"].isin(
-            auto_code_set
-        )
-    ].copy()
 
-    # -----------------------------------------------------
-    # 日付・株価整形
-    # -----------------------------------------------------
+st.success(
+    f"株価データ結合完了："
+    f"{len(bulk_all_df):,}行"
+)
 
-    all_price_df["Date"] = pd.to_datetime(
-        all_price_df["Date"],
-        errors="coerce"
+
+# =========================================================
+# 7. 20営業日前・60営業日前
+#
+# groupby.apply()を使わずshift()で高速計算
+# =========================================================
+
+bulk_all_df["Close20"] = (
+    bulk_all_df
+    .groupby("Code")["AdjC"]
+    .shift(20)
+)
+
+
+bulk_all_df["Close60"] = (
+    bulk_all_df
+    .groupby("Code")["AdjC"]
+    .shift(60)
+)
+
+
+# =========================================================
+# 8. 各銘柄の最新行だけ取得
+# =========================================================
+
+latest_price_df = (
+    bulk_all_df
+    .groupby(
+        "Code",
+        as_index=False
     )
+    .tail(1)
+    .copy()
+)
 
-    all_price_df["AdjC"] = pd.to_numeric(
-        all_price_df["AdjC"],
-        errors="coerce"
+
+# =========================================================
+# 9. 騰落率計算
+# =========================================================
+
+latest_price_df["Return20"] = (
+    (
+        latest_price_df["AdjC"]
+        /
+        latest_price_df["Close20"]
     )
+    - 1
+) * 100
 
-    all_price_df = (
-        all_price_df
-        .dropna(
-            subset=[
-                "Date",
-                "AdjC"
-            ]
-        )
-        .sort_values(
-            [
-                "Code",
-                "Date"
-            ]
-        )
+
+latest_price_df["Return60"] = (
+    (
+        latest_price_df["AdjC"]
+        /
+        latest_price_df["Close60"]
     )
+    - 1
+) * 100
 
-    # -----------------------------------------------------
-    # 銘柄ごとに最新・20営業日前・60営業日前
-    # -----------------------------------------------------
 
-    def calculate_price_returns(group):
-
-        group = (
-            group
-            .sort_values("Date")
-            .reset_index(drop=True)
-        )
-
-        if len(group) < 61:
-
-            return pd.Series({
-                "LatestClose": None,
-                "Return20": None,
-                "Return60": None,
-            })
-
-        latest_close = group.iloc[-1]["AdjC"]
-
-        close20 = group.iloc[-21]["AdjC"]
-        close60 = group.iloc[-61]["AdjC"]
-
-        return pd.Series({
-            "LatestClose": latest_close,
-
-            "Return20":
-                (
-                    latest_close
-                    / close20
-                    - 1
-                ) * 100,
-
-            "Return60":
-                (
-                    latest_close
-                    / close60
-                    - 1
-                ) * 100,
-        })
-
-    price_summary_df = (
-        all_price_df
-        .groupby("Code")
-        .apply(
-            calculate_price_returns
-        )
-        .reset_index()
+# 60営業日取れていない銘柄は除外
+valid_price_df = (
+    latest_price_df
+    .dropna(
+        subset=[
+            "Return20",
+            "Return60",
+        ]
     )
+    .copy()
+)
 
-    # -----------------------------------------------------
-    # 銘柄名追加
-    # -----------------------------------------------------
 
-    price_summary_df = (
-        price_summary_df
-        .merge(
-            name_map_df,
-            on="Code",
-            how="left"
-        )
+# =========================================================
+# 10. 銘柄名追加
+# =========================================================
+
+valid_price_df = (
+    valid_price_df
+    .merge(
+        name_map_df,
+        on="Code",
+        how="left",
     )
+)
 
-    # -----------------------------------------------------
-    # 表示
-    # -----------------------------------------------------
 
-    valid_price_df = (
-        price_summary_df
-        .dropna(
-            subset=[
-                "Return20",
-                "Return60"
-            ]
-        )
-        .copy()
+# =========================================================
+# 11. 表示用
+# =========================================================
+
+price_summary_df = (
+    valid_price_df[
+        [
+            "Code",
+            "CoName",
+            "Date",
+            "AdjC",
+            "Return20",
+            "Return60",
+        ]
+    ]
+    .copy()
+)
+
+
+price_summary_df = (
+    price_summary_df
+    .rename(
+        columns={
+            "AdjC": "LatestClose"
+        }
     )
+)
 
-    st.success(
-        f"20日・60日計算成功："
-        f"{len(valid_price_df):,}銘柄"
-    )
 
-    st.write(
-        "### 📊 全銘柄 株価20日・60日"
-    )
+st.success(
+    f"⚡ 20日・60日計算成功："
+    f"{len(price_summary_df):,}銘柄"
+)
 
-    st.dataframe(
-        valid_price_df[
-            [
-                "Code",
-                "CoName",
-                "LatestClose",
-                "Return20",
-                "Return60",
-            ]
-        ].head(100),
-        use_container_width=True,
-        hide_index=True,
-    )
+
+st.write(
+    "### 📊 全銘柄 株価20日・60日"
+)
+
+
+st.dataframe(
+    price_summary_df.head(100),
+    use_container_width=True,
+    hide_index=True,
+)
+
+
+# =========================================================
+# 12. 処理時間
+# =========================================================
+
+bulk_elapsed = (
+    time.time() - start_time
+)
+
+st.caption(
+    f"🪃 現在までの処理時間："
+    f"{bulk_elapsed:.1f}秒"
+)
