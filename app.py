@@ -2466,6 +2466,38 @@ st.dataframe(
     hide_index=True,
 )
 
+st.dataframe(
+    growth_df.head(100),
+    use_container_width=True,
+    hide_index=True,
+)
+
+# 👇 ここに入れる
+
+st.write("STEP8で存在する候補")
+
+for var_name in [
+    "result_df",
+    "op_compare_df",
+    "latest_compare_df",
+    "comparison_df",
+    "performance_df",
+    "growth_df",
+]:
+    if var_name in globals():
+        df = globals()[var_name]
+
+        if isinstance(df, pd.DataFrame):
+            st.write(
+                var_name,
+                len(df),
+                df.columns.tolist()
+            )
+
+# =========================================================
+# STEP 9：会社予想営業利益 FOP 上方修正判定
+# =========================================================
+
 # =========================================================
 # STEP 9：会社予想営業利益 FOP 上方修正判定
 # =========================================================
@@ -2901,23 +2933,6 @@ st.info(
 # =========================================================
 # ① STEP8の業績データを準備
 # =========================================================
-
-performance_merge_df = result_df.copy()
-
-st.write(
-    "STEP8 result_df の列名：",
-    result_df.columns.tolist()
-)
-
-performance_merge_df = performance_merge_df[
-    [
-        "Code",
-        "PrevOP",
-        "LatestOP",
-        "OPYoY",
-        "Turnaround",
-    ]
-].copy()
 
 performance_merge_df = performance_merge_df.rename(
     columns={
