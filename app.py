@@ -2904,6 +2904,11 @@ st.info(
 
 performance_merge_df = result_df.copy()
 
+st.write(
+    "STEP8 result_df の列名：",
+    result_df.columns.tolist()
+)
+
 performance_merge_df = performance_merge_df[
     [
         "Code",
