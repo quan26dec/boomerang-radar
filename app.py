@@ -1320,6 +1320,10 @@ st.success(
     f"{len(price_summary_df):,}銘柄"
 )
 
+st.write(
+    "🔍 株価計算後の列名",
+    bulk_all_df.columns.tolist()
+)
 
 st.write(
     "### 📊 全銘柄 株価20日・60日"
