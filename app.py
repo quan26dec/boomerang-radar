@@ -2465,3 +2465,422 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
 )
+
+# =========================================================
+# STEP 9：会社予想営業利益 FOP 上方修正判定
+# =========================================================
+
+st.divider()
+st.subheader("🪃 STEP 9：会社予想営業利益 上方修正判定")
+
+
+# ---------------------------------------------------------
+# STEP8で作成した財務データを使用
+# fin_all_df を想定
+# ---------------------------------------------------------
+
+forecast_df = fin_all_df.copy()
+
+
+# ---------------------------------------------------------
+# 必要列チェック
+# ---------------------------------------------------------
+
+required_cols = [
+    "Code",
+    "DiscDate",
+    "CurFYEn",
+    "FOP",
+]
+
+missing_cols = [
+    col
+    for col in required_cols
+    if col not in forecast_df.columns
+]
+
+if missing_cols:
+
+    st.error(
+        f"必要な列がありません：{missing_cols}"
+    )
+
+else:
+
+    # -----------------------------------------------------
+    # 型を整える
+    # -----------------------------------------------------
+
+    forecast_df["Code"] = (
+        forecast_df["Code"]
+        .astype(str)
+        .str.zfill(5)
+    )
+
+    forecast_df["DiscDate"] = pd.to_datetime(
+        forecast_df["DiscDate"],
+        errors="coerce"
+    )
+
+    forecast_df["CurFYEn"] = pd.to_datetime(
+        forecast_df["CurFYEn"],
+        errors="coerce"
+    )
+
+    forecast_df["FOP"] = pd.to_numeric(
+        forecast_df["FOP"],
+        errors="coerce"
+    )
+
+
+    # -----------------------------------------------------
+    # 会社予想営業利益が存在する行だけ
+    # -----------------------------------------------------
+
+    forecast_df = forecast_df.dropna(
+        subset=[
+            "Code",
+            "DiscDate",
+            "CurFYEn",
+            "FOP",
+        ]
+    ).copy()
+
+
+    # -----------------------------------------------------
+    # 東証内国株式のみ
+    # -----------------------------------------------------
+
+    forecast_df = forecast_df[
+        forecast_df["Code"].isin(
+            auto_code_set
+        )
+    ].copy()
+
+
+    # -----------------------------------------------------
+    # 同一銘柄・同一年度内で開示日順
+    # -----------------------------------------------------
+
+    forecast_df = forecast_df.sort_values(
+        [
+            "Code",
+            "CurFYEn",
+            "DiscDate",
+        ]
+    )
+
+
+    # -----------------------------------------------------
+    # 前回会社予想を作る
+    #
+    # 同じFOPが決算ごとに繰り返し掲載されることがあるため
+    # 単純shiftだけではなく、
+    # 「予想値が変化した履歴」を見る
+    # -----------------------------------------------------
+
+    revision_rows = []
+
+    for (code, fy_end), group in forecast_df.groupby(
+        [
+            "Code",
+            "CurFYEn",
+        ]
+    ):
+
+        group = group.sort_values(
+            "DiscDate"
+        ).copy()
+
+        # 同じ予想値の連続重複を除く
+        group["PrevRawFOP"] = (
+            group["FOP"]
+            .shift(1)
+        )
+
+        changed_group = group[
+            (
+                group["PrevRawFOP"].isna()
+            )
+            |
+            (
+                group["FOP"]
+                != group["PrevRawFOP"]
+            )
+        ].copy()
+
+        # 最低2回の異なる会社予想が必要
+        if len(changed_group) < 2:
+            continue
+
+        latest = changed_group.iloc[-1]
+        previous = changed_group.iloc[-2]
+
+        prev_fop = previous["FOP"]
+        latest_fop = latest["FOP"]
+
+        # -------------------------------------------------
+        # 修正額
+        # -------------------------------------------------
+
+        revision_amount = (
+            latest_fop
+            - prev_fop
+        )
+
+        # -------------------------------------------------
+        # 修正率
+        #
+        # 前回予想が0以下の場合、
+        # %表示は意味が崩れるのでNone
+        # -------------------------------------------------
+
+        if prev_fop > 0:
+
+            revision_rate = (
+                (
+                    latest_fop
+                    / prev_fop
+                )
+                - 1
+            ) * 100
+
+        else:
+
+            revision_rate = None
+
+
+        # -------------------------------------------------
+        # 判定
+        # -------------------------------------------------
+
+        if (
+            prev_fop < 0
+            and latest_fop > 0
+        ):
+
+            revision_type = "🔥 予想黒字転換"
+
+        elif latest_fop > prev_fop:
+
+            revision_type = "🟢 上方修正"
+
+        elif latest_fop < prev_fop:
+
+            revision_type = "🔴 下方修正"
+
+        else:
+
+            revision_type = "⚪ 据え置き"
+
+
+        revision_rows.append({
+            "Code": code,
+            "CurFYEn": fy_end,
+
+            "PrevDiscDate":
+                previous["DiscDate"],
+
+            "LatestDiscDate":
+                latest["DiscDate"],
+
+            "PrevFOP":
+                prev_fop,
+
+            "LatestFOP":
+                latest_fop,
+
+            "RevisionAmount":
+                revision_amount,
+
+            "RevisionRate":
+                revision_rate,
+
+            "RevisionType":
+                revision_type,
+        })
+
+
+    # -----------------------------------------------------
+    # DataFrame化
+    # -----------------------------------------------------
+
+    revision_df = pd.DataFrame(
+        revision_rows
+    )
+
+
+    if revision_df.empty:
+
+        st.warning(
+            "会社予想の変更履歴を取得できませんでした。"
+        )
+
+    else:
+
+        # -------------------------------------------------
+        # 銘柄名追加
+        # -------------------------------------------------
+
+        revision_df = revision_df.merge(
+            name_map_df,
+            on="Code",
+            how="left"
+        )
+
+
+        # -------------------------------------------------
+        # 億円表示
+        # -------------------------------------------------
+
+        revision_df[
+            "PrevFOP億円"
+        ] = (
+            revision_df["PrevFOP"]
+            / 100_000_000
+        )
+
+        revision_df[
+            "LatestFOP億円"
+        ] = (
+            revision_df["LatestFOP"]
+            / 100_000_000
+        )
+
+        revision_df[
+            "RevisionAmount億円"
+        ] = (
+            revision_df["RevisionAmount"]
+            / 100_000_000
+        )
+
+
+        # -------------------------------------------------
+        # 上方修正のみ
+        # -------------------------------------------------
+
+        upward_df = revision_df[
+            revision_df[
+                "LatestFOP"
+            ]
+            >
+            revision_df[
+                "PrevFOP"
+            ]
+        ].copy()
+
+
+        # -------------------------------------------------
+        # 集計表示
+        # -------------------------------------------------
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+
+            st.metric(
+                "予想変更を確認",
+                f"{len(revision_df):,}銘柄"
+            )
+
+        with col2:
+
+            st.metric(
+                "上方修正",
+                f"{len(upward_df):,}銘柄"
+            )
+
+        with col3:
+
+            forecast_turnaround_count = (
+                revision_df[
+                    "RevisionType"
+                ]
+                .eq(
+                    "🔥 予想黒字転換"
+                )
+                .sum()
+            )
+
+            st.metric(
+                "予想黒字転換",
+                f"{forecast_turnaround_count:,}銘柄"
+            )
+
+
+        # -------------------------------------------------
+        # 上方修正一覧
+        # -------------------------------------------------
+
+        st.write(
+            "### 🟢 会社予想営業利益 上方修正"
+        )
+
+        upward_display_df = (
+            upward_df[
+                [
+                    "Code",
+                    "CoName",
+                    "CurFYEn",
+                    "PrevDiscDate",
+                    "LatestDiscDate",
+                    "PrevFOP億円",
+                    "LatestFOP億円",
+                    "RevisionAmount億円",
+                    "RevisionRate",
+                    "RevisionType",
+                ]
+            ]
+            .sort_values(
+                "LatestDiscDate",
+                ascending=False
+            )
+        )
+
+        st.dataframe(
+            upward_display_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+        # -------------------------------------------------
+        # 予想黒字転換
+        # -------------------------------------------------
+
+        forecast_turnaround_df = (
+            revision_df[
+                revision_df[
+                    "RevisionType"
+                ]
+                ==
+                "🔥 予想黒字転換"
+            ]
+            .copy()
+        )
+
+        st.write(
+            "### 🔥 会社予想 赤字 → 黒字転換"
+        )
+
+        st.dataframe(
+            forecast_turnaround_df[
+                [
+                    "Code",
+                    "CoName",
+                    "CurFYEn",
+                    "PrevDiscDate",
+                    "LatestDiscDate",
+                    "PrevFOP億円",
+                    "LatestFOP億円",
+                    "RevisionAmount億円",
+                    "RevisionType",
+                ]
+            ]
+            .sort_values(
+                "LatestDiscDate",
+                ascending=False
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
