@@ -2884,3 +2884,418 @@ else:
             use_container_width=True,
             hide_index=True,
         )
+
+# =========================================================
+# STEP 10：業績 × 株価 統合観測テーブル
+# =========================================================
+
+st.divider()
+st.subheader("🪃 STEP 10：業績 × 株価 統合観測テーブル")
+
+st.info(
+    "実績営業利益・会社予想の変化と、"
+    "株価20日・60日の反応を同じテーブルで観測します。"
+)
+
+
+# =========================================================
+# ① STEP8の業績データを準備
+# =========================================================
+
+performance_merge_df = result_df.copy()
+
+performance_merge_df = performance_merge_df[
+    [
+        "Code",
+        "PrevOP",
+        "LatestOP",
+        "OPYoY",
+        "Turnaround",
+    ]
+].copy()
+
+performance_merge_df = performance_merge_df.rename(
+    columns={
+        "PrevOP": "PrevOP実績",
+        "LatestOP": "LatestOP実績",
+        "OPYoY": "OP前年比",
+        "Turnaround": "実績黒字転換",
+    }
+)
+
+
+# =========================================================
+# ② STEP9の会社予想データを準備
+# =========================================================
+
+forecast_merge_df = revision_df[
+    [
+        "Code",
+        "PrevFOP",
+        "LatestFOP",
+        "RevisionAmount",
+        "RevisionRate",
+        "RevisionType",
+        "LatestDiscDate",
+    ]
+].copy()
+
+forecast_merge_df = forecast_merge_df.rename(
+    columns={
+        "RevisionAmount": "FOP修正額",
+        "RevisionRate": "FOP修正率",
+        "RevisionType": "FOP修正判定",
+        "LatestDiscDate": "予想修正開示日",
+    }
+)
+
+
+# =========================================================
+# ③ STEP6の株価データを準備
+# =========================================================
+
+price_merge_df = price_summary_df[
+    [
+        "Code",
+        "CoName",
+        "LatestClose",
+        "Return20",
+        "Return60",
+    ]
+].copy()
+
+
+# =========================================================
+# ④ Codeを統一
+# =========================================================
+
+for df in [
+    performance_merge_df,
+    forecast_merge_df,
+    price_merge_df,
+]:
+
+    df["Code"] = (
+        df["Code"]
+        .astype(str)
+        .str.zfill(5)
+    )
+
+
+# =========================================================
+# ⑤ 3データを結合
+# =========================================================
+
+boomerang_df = (
+    performance_merge_df
+    .merge(
+        price_merge_df,
+        on="Code",
+        how="left",
+    )
+    .merge(
+        forecast_merge_df,
+        on="Code",
+        how="left",
+    )
+)
+
+
+# =========================================================
+# ⑥ 金額を億円へ
+# =========================================================
+
+money_cols = [
+    "PrevOP実績",
+    "LatestOP実績",
+    "PrevFOP",
+    "LatestFOP",
+    "FOP修正額",
+]
+
+for col in money_cols:
+
+    if col in boomerang_df.columns:
+
+        boomerang_df[col] = (
+            pd.to_numeric(
+                boomerang_df[col],
+                errors="coerce",
+            )
+            / 100_000_000
+        )
+
+
+# =========================================================
+# ⑦ 数値列を整える
+# =========================================================
+
+numeric_cols = [
+    "OP前年比",
+    "FOP修正率",
+    "LatestClose",
+    "Return20",
+    "Return60",
+]
+
+for col in numeric_cols:
+
+    if col in boomerang_df.columns:
+
+        boomerang_df[col] = pd.to_numeric(
+            boomerang_df[col],
+            errors="coerce",
+        )
+
+
+# =========================================================
+# ⑧ 観測用フラグ
+# =========================================================
+
+boomerang_df["実績改善"] = (
+    boomerang_df["LatestOP実績"]
+    >
+    boomerang_df["PrevOP実績"]
+)
+
+boomerang_df["会社予想上方修正"] = (
+    boomerang_df["LatestFOP"]
+    >
+    boomerang_df["PrevFOP"]
+)
+
+boomerang_df["20日株価未反応"] = (
+    boomerang_df["Return20"] <= 0
+)
+
+boomerang_df["60日株価未反応"] = (
+    boomerang_df["Return60"] <= 0
+)
+
+
+# =========================================================
+# ⑨ 🪃候補タイプ
+# =========================================================
+
+def classify_boomerang(row):
+
+    signals = []
+
+    if row.get("実績黒字転換", False):
+        signals.append("🔥実績黒転")
+
+    if (
+        row.get("FOP修正判定")
+        == "🔥 予想黒字転換"
+    ):
+        signals.append("🔥予想黒転")
+
+    elif row.get("会社予想上方修正", False):
+        signals.append("🟢上方修正")
+
+    if row.get("20日株価未反応", False):
+        signals.append("📉20日未反応")
+
+    if row.get("60日株価未反応", False):
+        signals.append("📉60日未反応")
+
+    if not signals:
+        return ""
+
+    return " / ".join(signals)
+
+
+boomerang_df["観測シグナル"] = (
+    boomerang_df.apply(
+        classify_boomerang,
+        axis=1,
+    )
+)
+
+
+# =========================================================
+# ⑩ まずは簡単な観測ポイント
+#
+# まだ最終BoomerangScoreにはしません。
+# シグナル数だけ数えて上位を観察します。
+# =========================================================
+
+boomerang_df["SignalCount"] = (
+    boomerang_df[
+        [
+            "実績改善",
+            "実績黒字転換",
+            "会社予想上方修正",
+            "20日株価未反応",
+            "60日株価未反応",
+        ]
+    ]
+    .fillna(False)
+    .astype(int)
+    .sum(axis=1)
+)
+
+
+# =========================================================
+# ⑪ 集計
+# =========================================================
+
+valid_boomerang_df = boomerang_df.dropna(
+    subset=[
+        "Return20",
+        "Return60",
+    ]
+).copy()
+
+
+strong_candidate_df = valid_boomerang_df[
+    (
+        valid_boomerang_df["実績改善"]
+        |
+        valid_boomerang_df["会社予想上方修正"]
+        |
+        valid_boomerang_df["実績黒字転換"]
+    )
+    &
+    (
+        valid_boomerang_df["20日株価未反応"]
+        |
+        valid_boomerang_df["60日株価未反応"]
+    )
+].copy()
+
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+
+    st.metric(
+        "統合観測銘柄",
+        f"{len(valid_boomerang_df):,}銘柄",
+    )
+
+with col2:
+
+    st.metric(
+        "業績改善＋株価未反応",
+        f"{len(strong_candidate_df):,}銘柄",
+    )
+
+with col3:
+
+    double_negative_count = (
+        (
+            strong_candidate_df["Return20"] < 0
+        )
+        &
+        (
+            strong_candidate_df["Return60"] < 0
+        )
+    ).sum()
+
+    st.metric(
+        "20日・60日ともマイナス",
+        f"{double_negative_count:,}銘柄",
+    )
+
+
+# =========================================================
+# ⑫ 🪃 業績改善 × 株価未反応
+# =========================================================
+
+st.write(
+    "### 🪃 業績改善 × 株価未反応"
+)
+
+strong_candidate_df = (
+    strong_candidate_df
+    .sort_values(
+        [
+            "SignalCount",
+            "Return20",
+        ],
+        ascending=[
+            False,
+            True,
+        ],
+    )
+)
+
+
+display_cols = [
+    "Code",
+    "CoName",
+    "LatestClose",
+    "Return20",
+    "Return60",
+    "PrevOP実績",
+    "LatestOP実績",
+    "OP前年比",
+    "実績黒字転換",
+    "PrevFOP",
+    "LatestFOP",
+    "FOP修正率",
+    "FOP修正判定",
+    "SignalCount",
+    "観測シグナル",
+]
+
+display_cols = [
+    col
+    for col in display_cols
+    if col in strong_candidate_df.columns
+]
+
+
+st.dataframe(
+    strong_candidate_df[
+        display_cols
+    ].head(200),
+    use_container_width=True,
+    hide_index=True,
+)
+
+
+# =========================================================
+# ⑬ 特に面白いゾーン
+#     業績改善なのに20日・60日とも株価マイナス
+# =========================================================
+
+deep_boomerang_df = strong_candidate_df[
+    (
+        strong_candidate_df["Return20"] < 0
+    )
+    &
+    (
+        strong_candidate_df["Return60"] < 0
+    )
+].copy()
+
+
+st.write(
+    "### 🔥🪃 20日・60日とも株価マイナス"
+)
+
+st.caption(
+    "業績改善シグナルがある一方、"
+    "20日・60日の株価騰落率がともにマイナスの銘柄です。"
+)
+
+st.dataframe(
+    deep_boomerang_df[
+        display_cols
+    ].head(100),
+    use_container_width=True,
+    hide_index=True,
+)
+
+
+# =========================================================
+# 処理時間
+# =========================================================
+
+elapsed = time.time() - start_time
+
+st.caption(
+    f"🪃 現在までの処理時間：{elapsed:.1f}秒"
+)
