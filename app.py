@@ -1045,12 +1045,13 @@ for i, bulk_item in enumerate(
                 "Date",
                 "Code",
                 "C",
+                "AdjFactor",
             ],
             dtype={
                 "Code": str
             },
         )
-
+        
         bulk_dfs.append(
             item_df
         )
