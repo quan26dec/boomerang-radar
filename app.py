@@ -3086,26 +3086,16 @@ st.write(
     boomerang_df.columns.tolist()
 )
 
-boomerang_df["実績改善"] = (
-    boomerang_df["LatestOP実績"]
-    >
-    boomerang_df["PrevOP実績"]
+# =========================================================
+# ⑧ 観測用フラグ
+# =========================================================
+
+st.write(
+    "🪃 boomerang_df の列名",
+    boomerang_df.columns.tolist()
 )
 
-boomerang_df["会社予想上方修正"] = (
-    boomerang_df["LatestFOP"]
-    >
-    boomerang_df["PrevFOP"]
-)
-
-boomerang_df["20日株価未反応"] = (
-    boomerang_df["Return20"] <= 0
-)
-
-boomerang_df["60日株価未反応"] = (
-    boomerang_df["Return60"] <= 0
-)
-
+st.stop()
 
 # =========================================================
 # ⑨ 🪃候補タイプ
