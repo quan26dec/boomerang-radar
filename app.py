@@ -1044,7 +1044,7 @@ for i, bulk_item in enumerate(
             usecols=[
                 "Date",
                 "Code",
-                "AdjC",
+                "C",
             ],
             dtype={
                 "Code": str
@@ -1118,8 +1118,8 @@ bulk_all_df["Date"] = pd.to_datetime(
 )
 
 
-bulk_all_df["AdjC"] = pd.to_numeric(
-    bulk_all_df["AdjC"],
+bulk_all_df["C"] = pd.to_numeric(
+    bulk_all_df["C"],
     errors="coerce",
 )
 
@@ -1128,7 +1128,7 @@ bulk_all_df = bulk_all_df.dropna(
     subset=[
         "Code",
         "Date",
-        "AdjC",
+        "C",
     ]
 )
 
@@ -1173,14 +1173,14 @@ st.success(
 
 bulk_all_df["Close20"] = (
     bulk_all_df
-    .groupby("Code")["AdjC"]
+    .groupby("Code")["C"]
     .shift(20)
 )
 
 
 bulk_all_df["Close60"] = (
     bulk_all_df
-    .groupby("Code")["AdjC"]
+    .groupby("Code")["C"]
     .shift(60)
 )
 
@@ -1206,7 +1206,7 @@ latest_price_df = (
 
 latest_price_df["Return20"] = (
     (
-        latest_price_df["AdjC"]
+        latest_price_df["C"]
         /
         latest_price_df["Close20"]
     )
@@ -1216,7 +1216,7 @@ latest_price_df["Return20"] = (
 
 latest_price_df["Return60"] = (
     (
-        latest_price_df["AdjC"]
+        latest_price_df["C"]
         /
         latest_price_df["Close60"]
     )
@@ -1261,7 +1261,7 @@ price_summary_df = (
             "Code",
             "CoName",
             "Date",
-            "AdjC",
+            "C",
             "Return20",
             "Return60",
         ]
@@ -1274,7 +1274,7 @@ price_summary_df = (
     price_summary_df
     .rename(
         columns={
-            "AdjC": "LatestClose"
+            "C": "LatestClose"
         }
     )
 )
