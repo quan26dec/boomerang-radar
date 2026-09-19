@@ -1124,6 +1124,15 @@ bulk_all_df["C"] = pd.to_numeric(
     errors="coerce",
 )
 
+bulk_all_df["AdjFactor"] = pd.to_numeric(
+    bulk_all_df["AdjFactor"],
+    errors="coerce",
+)
+
+bulk_all_df["AdjFactor"] = (
+    bulk_all_df["AdjFactor"]
+    .fillna(1.0)
+)
 
 bulk_all_df = bulk_all_df.dropna(
     subset=[
