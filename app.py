@@ -186,3 +186,77 @@ else:
             fin_df.head(20),
             use_container_width=True
         )
+
+# =========================================================
+# STEP 2：財務データ取得テスト（キヤノン 7751）
+# =========================================================
+
+st.divider()
+st.subheader("🧪 財務データ取得テスト：キヤノン（7751）")
+
+financial_url = "https://api.jquants.com/v2/fins/summary"
+
+test_code = "7751"
+
+fin_response = requests.get(
+    financial_url,
+    params={"code": test_code},
+    headers=headers,
+    timeout=30,
+)
+
+st.write(
+    "APIステータス:",
+    fin_response.status_code
+)
+
+if fin_response.status_code == 200:
+
+    fin_data = fin_response.json().get("data", [])
+
+    if len(fin_data) == 0:
+        st.warning("財務データがありません。")
+
+    else:
+        fin_df = pd.DataFrame(fin_data)
+
+        st.success(
+            f"✅ キヤノン財務データ取得成功：{len(fin_df)}件"
+        )
+
+        fin_df = fin_df.sort_values(
+            "DiscDate",
+            ascending=False
+        )
+
+        st.write("### 📊 取得列")
+        st.write(fin_df.columns.tolist())
+
+        # 🪃で重要な列だけ表示
+        important_cols = [
+            "DiscDate",
+            "DocType",
+            "CurPerType",
+            "CurFYEn",
+            "Sales",
+            "OP",
+            "FOP"
+        ]
+
+        existing_cols = [
+            col for col in important_cols
+            if col in fin_df.columns
+        ]
+
+        st.write("### 🪃 キヤノン業績履歴")
+
+        st.dataframe(
+            fin_df[existing_cols].head(20),
+            use_container_width=True
+        )
+
+else:
+    st.error(
+        f"財務データ取得失敗：{fin_response.status_code}"
+    )
+    st.write(fin_response.text)
