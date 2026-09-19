@@ -1400,3 +1400,118 @@ else:
             use_container_width=True,
             hide_index=True,
         )
+# =========================================================
+# STEP 7-2：最新財務Bulk 1ファイルの列確認
+# =========================================================
+
+st.write("### 🧪 最新財務Bulkの中身を確認")
+
+# Keyがあるファイルだけ
+valid_fin_files = [
+    item
+    for item in fin_bulk_files
+    if item.get("Key")
+]
+
+# Key順に並べて最新を取得
+valid_fin_files = sorted(
+    valid_fin_files,
+    key=lambda x: x["Key"]
+)
+
+latest_fin_item = valid_fin_files[-1]
+
+latest_fin_key = latest_fin_item["Key"]
+
+st.write(
+    "確認ファイル：",
+    latest_fin_key
+)
+
+
+# =========================================================
+# Download URL取得
+# =========================================================
+
+fin_get_response = requests.get(
+    "https://api.jquants.com/v2/bulk/get",
+    headers=headers,
+    params={
+        "key": latest_fin_key
+    },
+    timeout=30,
+)
+
+if fin_get_response.status_code != 200:
+
+    st.error(
+        f"財務Bulk取得エラー："
+        f"{fin_get_response.status_code}"
+    )
+
+    st.write(fin_get_response.text)
+
+else:
+
+    fin_download_url = (
+        fin_get_response
+        .json()
+        .get("url")
+    )
+
+    if not fin_download_url:
+
+        st.error(
+            "Download URLがありません。"
+        )
+
+    else:
+
+        fin_file_response = requests.get(
+            fin_download_url,
+            timeout=60,
+        )
+
+        if fin_file_response.status_code != 200:
+
+            st.error(
+                "財務CSVのダウンロードに失敗しました。"
+            )
+
+        else:
+
+            try:
+
+                test_fin_bulk_df = pd.read_csv(
+                    io.BytesIO(
+                        fin_file_response.content
+                    ),
+                    compression="gzip",
+                    dtype={
+                        "Code": str
+                    },
+                )
+
+                st.success(
+                    f"財務Bulk読込成功："
+                    f"{len(test_fin_bulk_df):,}行"
+                )
+
+                st.write("### 📊 実際の列名")
+
+                st.write(
+                    test_fin_bulk_df.columns.tolist()
+                )
+
+                st.write("### 📋 先頭10行")
+
+                st.dataframe(
+                    test_fin_bulk_df.head(10),
+                    use_container_width=True,
+                )
+
+            except Exception as e:
+
+                st.error(
+                    f"財務CSV読込エラー：{e}"
+                )
