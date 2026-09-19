@@ -2934,6 +2934,15 @@ st.info(
 # ① STEP8の業績データを準備
 # =========================================================
 
+# STEP8の全銘柄業績データをSTEP10へ引き継ぐ
+performance_merge_df = growth_df.copy()
+
+st.write(
+    "STEP10 接続元 growth_df：",
+    len(performance_merge_df),
+    performance_merge_df.columns.tolist()
+)
+
 performance_merge_df = performance_merge_df.rename(
     columns={
         "PrevOP": "PrevOP実績",
