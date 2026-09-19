@@ -3094,6 +3094,30 @@ if "CoName_y" in boomerang_df.columns:
 
 
 # =========================================================
+# ⑦-2 重複銘柄を整理
+# 1銘柄 = 1行
+# 最新の開示データを残す
+# =========================================================
+
+boomerang_df["開示日"] = pd.to_datetime(
+    boomerang_df["開示日"],
+    errors="coerce"
+)
+
+boomerang_df = (
+    boomerang_df
+    .sort_values(
+        ["Code", "開示日"],
+        ascending=[True, False]
+    )
+    .drop_duplicates(
+        subset=["Code"],
+        keep="first"
+    )
+    .reset_index(drop=True)
+)
+
+# =========================================================
 # ⑨ 観測用フラグ
 # =========================================================
 
