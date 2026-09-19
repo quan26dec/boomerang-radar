@@ -410,3 +410,192 @@ else:
         st.success(
             "🔥 営業利益が前年同期赤字から黒字へ転換"
         )
+# =========================================================
+# STEP 4：会社予想営業利益（FOP）の修正検知
+# =========================================================
+
+st.divider()
+st.subheader("🪃 会社予想営業利益の修正")
+
+# FOPが存在するデータだけ使用
+fop_df = fin_df[
+    fin_df["FOP"].notna()
+].copy()
+
+fop_df = fop_df.sort_values(
+    "DiscDate",
+    ascending=False
+)
+
+if fop_df.empty:
+
+    st.warning(
+        "会社予想営業利益（FOP）がありません。"
+    )
+
+else:
+
+    # -----------------------------------------------------
+    # 1. 現在の最新FOP
+    # -----------------------------------------------------
+
+    latest_fop_row = fop_df.iloc[0]
+
+    current_fop = pd.to_numeric(
+        latest_fop_row["FOP"],
+        errors="coerce"
+    )
+
+    current_fop_date = latest_fop_row["DiscDate"]
+
+    # -----------------------------------------------------
+    # 2. 過去の「異なるFOP」を探す
+    # -----------------------------------------------------
+
+    previous_fop_row = None
+
+    for _, row in fop_df.iloc[1:].iterrows():
+
+        candidate_fop = pd.to_numeric(
+            row["FOP"],
+            errors="coerce"
+        )
+
+        if (
+            pd.notna(candidate_fop)
+            and
+            pd.notna(current_fop)
+            and
+            candidate_fop != current_fop
+        ):
+            previous_fop_row = row
+            break
+
+    # -----------------------------------------------------
+    # 3. 修正率を計算
+    # -----------------------------------------------------
+
+    if previous_fop_row is None:
+
+        st.info(
+            "比較できる過去の異なる会社予想がありません。"
+        )
+
+    else:
+
+        previous_fop = pd.to_numeric(
+            previous_fop_row["FOP"],
+            errors="coerce"
+        )
+
+        previous_fop_date = previous_fop_row["DiscDate"]
+
+        fop_change = (
+            current_fop - previous_fop
+        )
+
+        if previous_fop != 0:
+
+            fop_change_pct = (
+                (current_fop / previous_fop) - 1
+            ) * 100
+
+        else:
+
+            fop_change_pct = None
+
+        # -------------------------------------------------
+        # 4. 判定
+        # -------------------------------------------------
+
+        if current_fop > previous_fop:
+
+            revision_label = "🟢 上方修正"
+
+        elif current_fop < previous_fop:
+
+            revision_label = "🔴 下方修正"
+
+        else:
+
+            revision_label = "⚪ 変更なし"
+
+        # -------------------------------------------------
+        # 5. 表示
+        # -------------------------------------------------
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+
+            st.metric(
+                "現在会社予想",
+                f"{current_fop / 1e8:,.1f}億円"
+            )
+
+        with col2:
+
+            st.metric(
+                "前回会社予想",
+                f"{previous_fop / 1e8:,.1f}億円"
+            )
+
+        with col3:
+
+            if fop_change_pct is not None:
+
+                st.metric(
+                    "予想修正率",
+                    f"{fop_change_pct:+.2f}%"
+                )
+
+            else:
+
+                st.metric(
+                    "予想修正率",
+                    "比較不能"
+                )
+
+        with col4:
+
+            st.metric(
+                "修正判定",
+                revision_label
+            )
+
+        st.caption(
+            f"前回予想：{previous_fop_date.date()} → "
+            f"現在予想：{current_fop_date.date()}"
+        )
+
+        # -------------------------------------------------
+        # 6. 修正額
+        # -------------------------------------------------
+
+        st.write("### 📈 会社予想の変化")
+
+        revision_df = pd.DataFrame(
+            {
+                "項目": [
+                    "会社予想営業利益"
+                ],
+                "前回予想（億円）": [
+                    previous_fop / 1e8
+                ],
+                "現在予想（億円）": [
+                    current_fop / 1e8
+                ],
+                "修正額（億円）": [
+                    fop_change / 1e8
+                ],
+                "修正率（%）": [
+                    fop_change_pct
+                ]
+            }
+        )
+
+        st.dataframe(
+            revision_df,
+            use_container_width=True,
+            hide_index=True
+        )
