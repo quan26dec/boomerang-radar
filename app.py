@@ -1540,3 +1540,443 @@ important_columns = [
 ]
 
 st.write(important_columns)
+
+# =========================================================
+# STEP 7-4：直近18か月 財務Bulk一括取得
+# =========================================================
+
+st.divider()
+st.subheader("🪃 STEP 7-4：直近18か月 財務データ高速取得")
+
+# ---------------------------------------------------------
+# 18か月前の日付
+# ---------------------------------------------------------
+
+today_fin = pd.Timestamp.today().normalize()
+
+fin_start_date = (
+    today_fin - pd.DateOffset(months=18)
+)
+
+st.write(
+    f"対象期間："
+    f"{fin_start_date.date()} ～ {today_fin.date()}"
+)
+
+
+# =========================================================
+# Historical / Live 分離
+# =========================================================
+
+fin_historical_files = [
+    item
+    for item in fin_bulk_files
+    if "/historical/" in item.get("Key", "")
+]
+
+fin_live_files = [
+    item
+    for item in fin_bulk_files
+    if "/live/" in item.get("Key", "")
+]
+
+
+# =========================================================
+# Historicalから直近18か月分を選択
+# =========================================================
+
+target_historical_files = []
+
+for item in fin_historical_files:
+
+    key = item.get("Key", "")
+
+    try:
+
+        # 例：
+        # fins_summary_202608.csv.gz
+
+        filename = key.split("/")[-1]
+
+        yyyymm = (
+            filename
+            .replace("fins_summary_", "")
+            .replace(".csv.gz", "")
+        )
+
+        file_month = pd.to_datetime(
+            yyyymm,
+            format="%Y%m"
+        )
+
+        if file_month >= fin_start_date.replace(day=1):
+
+            target_historical_files.append(
+                item
+            )
+
+    except Exception:
+
+        continue
+
+
+# =========================================================
+# Liveは全部使用
+# =========================================================
+
+fin_target_files = (
+    target_historical_files
+    + fin_live_files
+)
+
+
+# ---------------------------------------------------------
+# Key重複除去
+# ---------------------------------------------------------
+
+unique_fin_files = {}
+
+for item in fin_target_files:
+
+    key = item.get("Key")
+
+    if key:
+        unique_fin_files[key] = item
+
+
+fin_target_files = list(
+    unique_fin_files.values()
+)
+
+
+st.write(
+    f"📦 読み込み対象財務Bulk："
+    f"{len(fin_target_files)}ファイル"
+)
+
+
+# =========================================================
+# 財務Bulk取得
+# =========================================================
+
+fin_bulk_dfs = []
+
+fin_progress = st.progress(0)
+
+fin_status = st.empty()
+
+total_fin_files = len(
+    fin_target_files
+)
+
+
+for i, fin_item in enumerate(
+    fin_target_files
+):
+
+    fin_key = fin_item["Key"]
+
+    fin_status.write(
+        f"📥 財務データ取得中 "
+        f"{i + 1}/{total_fin_files}"
+    )
+
+    # ---------------------------------------------
+    # Download URL取得
+    # ---------------------------------------------
+
+    get_response = requests.get(
+        "https://api.jquants.com/v2/bulk/get",
+        headers=headers,
+        params={
+            "key": fin_key
+        },
+        timeout=30,
+    )
+
+    if get_response.status_code != 200:
+
+        st.warning(
+            f"取得失敗：{fin_key}"
+        )
+
+        continue
+
+
+    download_url = (
+        get_response
+        .json()
+        .get("url")
+    )
+
+    if not download_url:
+
+        st.warning(
+            f"Download URLなし：{fin_key}"
+        )
+
+        continue
+
+
+    # ---------------------------------------------
+    # CSVダウンロード
+    # ---------------------------------------------
+
+    file_response = requests.get(
+        download_url,
+        timeout=60,
+    )
+
+    if file_response.status_code != 200:
+
+        st.warning(
+            f"CSV取得失敗：{fin_key}"
+        )
+
+        continue
+
+
+    # ---------------------------------------------
+    # CSV読込
+    # ---------------------------------------------
+
+    try:
+
+        fin_part_df = pd.read_csv(
+            io.BytesIO(
+                file_response.content
+            ),
+            compression="gzip",
+            dtype={
+                "Code": str
+            },
+        )
+
+        fin_bulk_dfs.append(
+            fin_part_df
+        )
+
+    except Exception as e:
+
+        st.warning(
+            f"CSV読込失敗："
+            f"{fin_key} / {e}"
+        )
+
+
+    fin_progress.progress(
+        (i + 1)
+        / total_fin_files
+    )
+
+
+fin_progress.empty()
+fin_status.empty()
+
+
+# =========================================================
+# 財務Bulk結合
+# =========================================================
+
+if not fin_bulk_dfs:
+
+    st.error(
+        "財務データを取得できませんでした。"
+    )
+
+    st.stop()
+
+
+st.write(
+    "📡 財務データ結合中..."
+)
+
+
+all_fin_df = pd.concat(
+    fin_bulk_dfs,
+    ignore_index=True,
+)
+
+
+# =========================================================
+# 基本整形
+# =========================================================
+
+all_fin_df["Code"] = (
+    all_fin_df["Code"]
+    .astype(str)
+    .str.zfill(5)
+)
+
+
+all_fin_df["DiscDate"] = pd.to_datetime(
+    all_fin_df["DiscDate"],
+    errors="coerce",
+)
+
+
+# ---------------------------------------------------------
+# 東証内国株式のみ
+# ---------------------------------------------------------
+
+all_fin_df = all_fin_df[
+    all_fin_df["Code"].isin(
+        auto_code_set
+    )
+].copy()
+
+
+# ---------------------------------------------------------
+# 実際の開示日でも18か月に限定
+# ---------------------------------------------------------
+
+all_fin_df = all_fin_df[
+    all_fin_df["DiscDate"]
+    >= fin_start_date
+].copy()
+
+
+# ---------------------------------------------------------
+# 重複除去
+#
+# DiscNoが開示書類の識別子なので、
+# 同じ開示がHistorical / Live双方にあっても1件にする
+# ---------------------------------------------------------
+
+if "DiscNo" in all_fin_df.columns:
+
+    all_fin_df = (
+        all_fin_df
+        .drop_duplicates(
+            subset=["DiscNo"],
+            keep="last",
+        )
+    )
+
+
+# ---------------------------------------------------------
+# 開示日順
+# ---------------------------------------------------------
+
+all_fin_df = (
+    all_fin_df
+    .sort_values(
+        [
+            "Code",
+            "DiscDate",
+        ]
+    )
+    .reset_index(drop=True)
+)
+
+
+# =========================================================
+# 数値列変換
+# =========================================================
+
+numeric_columns = [
+    "Sales",
+    "OP",
+    "OdP",
+    "NP",
+    "FSales",
+    "FOP",
+    "FOdP",
+    "FNP",
+    "FSales2Q",
+    "FOP2Q",
+    "FOdP2Q",
+    "FNP2Q",
+]
+
+
+for col in numeric_columns:
+
+    if col in all_fin_df.columns:
+
+        all_fin_df[col] = pd.to_numeric(
+            all_fin_df[col],
+            errors="coerce",
+        )
+
+
+# =========================================================
+# 結果
+# =========================================================
+
+st.success(
+    f"🪃 財務データ取得完了："
+    f"{len(all_fin_df):,}行"
+)
+
+
+st.success(
+    f"🪃 財務データ対象："
+    f"{all_fin_df['Code'].nunique():,}銘柄"
+)
+
+
+# =========================================================
+# 確認用表示
+# =========================================================
+
+display_fin_columns = [
+    "DiscDate",
+    "Code",
+    "DocType",
+    "CurPerType",
+    "CurFYEn",
+    "Sales",
+    "OP",
+    "FSales",
+    "FOP",
+]
+
+
+display_fin_columns = [
+    col
+    for col in display_fin_columns
+    if col in all_fin_df.columns
+]
+
+
+st.write(
+    "### 📊 直近18か月 財務データ"
+)
+
+
+st.dataframe(
+    all_fin_df[
+        display_fin_columns
+    ].tail(100),
+    use_container_width=True,
+    hide_index=True,
+)
+
+
+# =========================================================
+# DocType確認
+# =========================================================
+
+st.write(
+    "### 🔍 DocType別件数"
+)
+
+
+doctype_count_df = (
+    all_fin_df["DocType"]
+    .value_counts()
+    .reset_index()
+)
+
+doctype_count_df.columns = [
+    "DocType",
+    "件数",
+]
+
+
+st.dataframe(
+    doctype_count_df,
+    use_container_width=True,
+    hide_index=True,
+)
