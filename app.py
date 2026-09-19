@@ -134,66 +134,6 @@ st.caption(
 st.divider()
 st.subheader("🧪 財務データ取得テスト：キヤノン（7751）")
 
-test_code = "77510"
-
-fin_url = "https://api.jquants.com/v2/fins/statements"
-
-fin_response = requests.get(
-    fin_url,
-    headers=headers,
-    params={"code": test_code},
-    timeout=30,
-)
-
-if fin_response.status_code != 200:
-    st.error(
-        f"財務データ取得エラー："
-        f"{fin_response.status_code}"
-    )
-
-    # エラー内容も確認
-    st.write(fin_response.text)
-
-else:
-    fin_data = fin_response.json().get("data", [])
-
-    if not fin_data:
-        st.warning("財務データが取得できませんでした。")
-
-    else:
-        fin_df = pd.DataFrame(fin_data)
-
-        st.success(
-            f"財務データ取得成功：{len(fin_df)}件"
-        )
-
-        # 新しい開示が上に来るようにする
-        if "DiscDate" in fin_df.columns:
-            fin_df = fin_df.sort_values(
-                "DiscDate",
-                ascending=False
-            )
-
-        st.write("### 📊 取得できた列")
-
-        st.write(
-            fin_df.columns.tolist()
-        )
-
-        st.write("### 📋 キヤノン財務データ")
-
-        st.dataframe(
-            fin_df.head(20),
-            use_container_width=True
-        )
-
-# =========================================================
-# STEP 2：財務データ取得テスト（キヤノン 7751）
-# =========================================================
-
-st.divider()
-st.subheader("🧪 財務データ取得テスト：キヤノン（7751）")
-
 financial_url = "https://api.jquants.com/v2/fins/summary"
 
 test_code = "7751"
