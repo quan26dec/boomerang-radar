@@ -681,9 +681,8 @@ else:
         # -------------------------------------------------
 
         close_candidates = [
-            "AdjClose",
-            "AdjustmentClose",
-            "Close",
+            "AdjC",
+            "C",
         ]
 
         close_col = None
