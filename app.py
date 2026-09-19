@@ -200,3 +200,213 @@ else:
         f"財務データ取得失敗：{fin_response.status_code}"
     )
     st.write(fin_response.text)
+# =========================================================
+# STEP 3：最新決算 vs 前年同期
+# =========================================================
+
+st.divider()
+st.subheader("🪃 最新決算 vs 前年同期")
+
+# 日付型に変換
+fin_df["DiscDate"] = pd.to_datetime(
+    fin_df["DiscDate"],
+    errors="coerce"
+)
+
+# 数値型に変換
+for col in ["Sales", "OP", "FOP"]:
+    if col in fin_df.columns:
+        fin_df[col] = pd.to_numeric(
+            fin_df[col],
+            errors="coerce"
+        )
+
+# ---------------------------------------------------------
+# 1. 最新の四半期決算を取得
+# ---------------------------------------------------------
+
+quarter_df = fin_df[
+    fin_df["CurPerType"].isin(
+        ["1Q", "2Q", "3Q", "FY"]
+    )
+].copy()
+
+quarter_df = quarter_df.sort_values(
+    "DiscDate",
+    ascending=False
+)
+
+latest = quarter_df.iloc[0]
+
+latest_period = latest["CurPerType"]
+latest_fy_end = pd.to_datetime(
+    latest["CurFYEn"],
+    errors="coerce"
+)
+
+# ---------------------------------------------------------
+# 2. 前年同期を探す
+# ---------------------------------------------------------
+
+previous_candidates = quarter_df[
+    (quarter_df["CurPerType"] == latest_period)
+    &
+    (
+        pd.to_datetime(
+            quarter_df["CurFYEn"],
+            errors="coerce"
+        ).dt.year
+        ==
+        latest_fy_end.year - 1
+    )
+].copy()
+
+if previous_candidates.empty:
+
+    st.warning(
+        "前年同期データが見つかりませんでした。"
+    )
+
+else:
+
+    previous = (
+        previous_candidates
+        .sort_values(
+            "DiscDate",
+            ascending=False
+        )
+        .iloc[0]
+    )
+
+    latest_op = latest["OP"]
+    previous_op = previous["OP"]
+
+    latest_sales = latest["Sales"]
+    previous_sales = previous["Sales"]
+
+    latest_fop = latest["FOP"]
+
+    # -----------------------------------------------------
+    # 3. 前年同期比を計算
+    # -----------------------------------------------------
+
+    op_change = latest_op - previous_op
+
+    if previous_op > 0:
+        op_growth = (
+            (latest_op / previous_op) - 1
+        ) * 100
+    else:
+        op_growth = None
+
+    if previous_sales > 0:
+        sales_growth = (
+            (latest_sales / previous_sales) - 1
+        ) * 100
+    else:
+        sales_growth = None
+
+    # 黒字転換
+    turnaround = (
+        previous_op <= 0
+        and latest_op > 0
+    )
+
+    # -----------------------------------------------------
+    # 4. 表示
+    # -----------------------------------------------------
+
+    st.write(
+        f"最新決算：{latest_period} "
+        f"（開示日 {latest['DiscDate'].date()}）"
+    )
+
+    st.write(
+        f"前年同期：{previous['CurPerType']} "
+        f"（開示日 {previous['DiscDate'].date()}）"
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "最新営業利益",
+            f"{latest_op / 1e8:,.1f}億円"
+        )
+
+    with col2:
+        st.metric(
+            "前年同期営業利益",
+            f"{previous_op / 1e8:,.1f}億円"
+        )
+
+    with col3:
+
+        if op_growth is not None:
+
+            st.metric(
+                "営業利益前年比",
+                f"{op_growth:+.1f}%"
+            )
+
+        elif turnaround:
+
+            st.metric(
+                "営業利益前年比",
+                "🔥 黒字転換"
+            )
+
+        else:
+
+            st.metric(
+                "営業利益前年比",
+                "比較不能"
+            )
+
+    with col4:
+        st.metric(
+            "会社予想営業利益",
+            (
+                f"{latest_fop / 1e8:,.1f}億円"
+                if pd.notna(latest_fop)
+                else "―"
+            )
+        )
+
+    # -----------------------------------------------------
+    # 5. 詳細
+    # -----------------------------------------------------
+
+    st.write("### 📊 業績変化")
+
+    result_df = pd.DataFrame(
+        {
+            "項目": [
+                "売上高",
+                "営業利益"
+            ],
+            "前年同期": [
+                previous_sales / 1e8,
+                previous_op / 1e8
+            ],
+            "最新": [
+                latest_sales / 1e8,
+                latest_op / 1e8
+            ],
+            "前年比(%)": [
+                sales_growth,
+                op_growth
+            ]
+        }
+    )
+
+    st.dataframe(
+        result_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    if turnaround:
+        st.success(
+            "🔥 営業利益が前年同期赤字から黒字へ転換"
+        )
