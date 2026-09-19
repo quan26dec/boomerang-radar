@@ -1980,3 +1980,488 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
 )
+
+# =========================================================
+# STEP 8：全銘柄 OP前年比 ＋ 黒字転換判定
+# =========================================================
+
+st.divider()
+st.subheader("🪃 STEP 8：全銘柄 OP前年比・黒字転換判定")
+
+st.write(
+    "📡 最新決算と前年同期を比較しています..."
+)
+
+
+# =========================================================
+# 1. 決算データだけ抽出
+# =========================================================
+
+financial_df = all_fin_df[
+    all_fin_df["DocType"]
+    .astype(str)
+    .str.contains(
+        "FinancialStatements",
+        na=False,
+    )
+].copy()
+
+
+# ---------------------------------------------------------
+# 必要項目がない行を除外
+# ---------------------------------------------------------
+
+financial_df = financial_df.dropna(
+    subset=[
+        "Code",
+        "DiscDate",
+        "CurPerType",
+        "CurFYEn",
+        "OP",
+    ]
+).copy()
+
+
+# =========================================================
+# 2. 比較対象の決算期を限定
+#
+# 1Q → 前年1Q
+# 2Q → 前年2Q
+# 3Q → 前年3Q
+# FY → 前年FY
+# =========================================================
+
+valid_periods = [
+    "1Q",
+    "2Q",
+    "3Q",
+    "FY",
+]
+
+financial_df = financial_df[
+    financial_df["CurPerType"].isin(
+        valid_periods
+    )
+].copy()
+
+
+# =========================================================
+# 3. 同じ決算が複数回開示されている場合の整理
+#
+# Code + CurFYEn + CurPerType ごとに
+# 最も新しい開示を採用
+# =========================================================
+
+financial_df = (
+    financial_df
+    .sort_values(
+        [
+            "Code",
+            "CurFYEn",
+            "CurPerType",
+            "DiscDate",
+        ]
+    )
+    .drop_duplicates(
+        subset=[
+            "Code",
+            "CurFYEn",
+            "CurPerType",
+        ],
+        keep="last",
+    )
+    .reset_index(drop=True)
+)
+
+
+# =========================================================
+# 4. 年度終了日を日付化
+# =========================================================
+
+financial_df["CurFYEn"] = pd.to_datetime(
+    financial_df["CurFYEn"],
+    errors="coerce",
+)
+
+financial_df = financial_df.dropna(
+    subset=["CurFYEn"]
+).copy()
+
+
+# =========================================================
+# 5. 前年同期を自己結合するためのデータ作成
+# =========================================================
+
+previous_df = financial_df[
+    [
+        "Code",
+        "CurPerType",
+        "CurFYEn",
+        "OP",
+        "Sales",
+    ]
+].copy()
+
+
+previous_df = previous_df.rename(
+    columns={
+        "CurFYEn": "PrevFYEn",
+        "OP": "PrevOP",
+        "Sales": "PrevSales",
+    }
+)
+
+
+# =========================================================
+# 6. 前年の年度終了日を作成
+#
+# 例：
+# 2027-03-31 → 2026-03-31
+# =========================================================
+
+financial_df["PrevFYEn"] = (
+    financial_df["CurFYEn"]
+    - pd.DateOffset(years=1)
+)
+
+
+# =========================================================
+# 7. Code + 決算期 + 前年度終了日で前年同期を結合
+# =========================================================
+
+comparison_df = financial_df.merge(
+    previous_df,
+    on=[
+        "Code",
+        "CurPerType",
+        "PrevFYEn",
+    ],
+    how="left",
+)
+
+
+# =========================================================
+# 8. OP前年比を計算
+# =========================================================
+
+comparison_df["OP_YoY"] = pd.NA
+
+
+# ---------------------------------------------------------
+# 通常の前年比
+#
+# 前年OPがプラスの場合のみ
+# %計算する
+# ---------------------------------------------------------
+
+positive_prev_mask = (
+    comparison_df["PrevOP"] > 0
+)
+
+comparison_df.loc[
+    positive_prev_mask,
+    "OP_YoY"
+] = (
+    (
+        comparison_df.loc[
+            positive_prev_mask,
+            "OP"
+        ]
+        /
+        comparison_df.loc[
+            positive_prev_mask,
+            "PrevOP"
+        ]
+        - 1
+    )
+    * 100
+)
+
+
+comparison_df["OP_YoY"] = pd.to_numeric(
+    comparison_df["OP_YoY"],
+    errors="coerce",
+)
+
+
+# =========================================================
+# 9. 黒字転換・赤字転落を判定
+# =========================================================
+
+comparison_df["Turnaround"] = (
+    (comparison_df["PrevOP"] < 0)
+    &
+    (comparison_df["OP"] > 0)
+)
+
+
+comparison_df["LossTurn"] = (
+    (comparison_df["PrevOP"] > 0)
+    &
+    (comparison_df["OP"] < 0)
+)
+
+
+# =========================================================
+# 10. 増益判定
+#
+# 前年・今年とも黒字で、
+# OPが前年を上回る場合
+# =========================================================
+
+comparison_df["ProfitGrowth"] = (
+    (comparison_df["PrevOP"] > 0)
+    &
+    (comparison_df["OP"] > comparison_df["PrevOP"])
+)
+
+
+# =========================================================
+# 11. 各銘柄の「最新決算」だけ取得
+# =========================================================
+
+latest_financial_df = (
+    comparison_df
+    .sort_values(
+        [
+            "Code",
+            "DiscDate",
+        ]
+    )
+    .groupby(
+        "Code",
+        as_index=False
+    )
+    .tail(1)
+    .copy()
+)
+
+
+# =========================================================
+# 12. 前年同期データが存在する銘柄だけ
+# =========================================================
+
+latest_financial_df = (
+    latest_financial_df
+    .dropna(
+        subset=["PrevOP"]
+    )
+    .copy()
+)
+
+
+# =========================================================
+# 13. 銘柄名を追加
+# =========================================================
+
+latest_financial_df = (
+    latest_financial_df
+    .merge(
+        name_map_df,
+        on="Code",
+        how="left",
+    )
+)
+
+
+# =========================================================
+# 14. 億円表示用
+# =========================================================
+
+latest_financial_df["OP_Oku"] = (
+    latest_financial_df["OP"]
+    / 100_000_000
+)
+
+
+latest_financial_df["PrevOP_Oku"] = (
+    latest_financial_df["PrevOP"]
+    / 100_000_000
+)
+
+
+# =========================================================
+# 15. 判定ラベル
+# =========================================================
+
+def make_op_label(row):
+
+    if row["Turnaround"]:
+        return "🔥 黒字転換"
+
+    if row["LossTurn"]:
+        return "🔻 赤字転落"
+
+    if row["ProfitGrowth"]:
+        return "🟢 増益"
+
+    if (
+        row["OP"] > 0
+        and row["PrevOP"] > 0
+    ):
+        return "🟡 減益"
+
+    if (
+        row["OP"] < 0
+        and row["PrevOP"] < 0
+    ):
+
+        if row["OP"] > row["PrevOP"]:
+            return "🟠 赤字縮小"
+
+        return "🔴 赤字拡大"
+
+    return "－"
+
+
+latest_financial_df["OP判定"] = (
+    latest_financial_df.apply(
+        make_op_label,
+        axis=1,
+    )
+)
+
+
+# =========================================================
+# 16. 表示用データ
+# =========================================================
+
+op_result_df = latest_financial_df[
+    [
+        "Code",
+        "CoName",
+        "DiscDate",
+        "CurPerType",
+        "CurFYEn",
+        "PrevOP_Oku",
+        "OP_Oku",
+        "OP_YoY",
+        "OP判定",
+        "Turnaround",
+    ]
+].copy()
+
+
+op_result_df = op_result_df.rename(
+    columns={
+        "DiscDate": "開示日",
+        "CurPerType": "決算期",
+        "CurFYEn": "年度末",
+        "PrevOP_Oku": "前年OP(億円)",
+        "OP_Oku": "最新OP(億円)",
+        "OP_YoY": "OP前年比(%)",
+        "Turnaround": "黒字転換",
+    }
+)
+
+
+# =========================================================
+# 17. 結果
+# =========================================================
+
+st.success(
+    f"🪃 前年同期比較成功："
+    f"{len(op_result_df):,}銘柄"
+)
+
+
+turnaround_count = int(
+    op_result_df["黒字転換"].sum()
+)
+
+
+growth_count = int(
+    (
+        op_result_df["OP判定"]
+        == "🟢 増益"
+    ).sum()
+)
+
+
+col1, col2, col3 = st.columns(3)
+
+
+with col1:
+
+    st.metric(
+        "前年同期比較",
+        f"{len(op_result_df):,}銘柄",
+    )
+
+
+with col2:
+
+    st.metric(
+        "🟢 増益",
+        f"{growth_count:,}銘柄",
+    )
+
+
+with col3:
+
+    st.metric(
+        "🔥 黒字転換",
+        f"{turnaround_count:,}銘柄",
+    )
+
+
+# =========================================================
+# 18. 黒字転換ランキング
+# =========================================================
+
+st.write(
+    "### 🔥 前年赤字 → 黒字転換"
+)
+
+
+turnaround_df = (
+    op_result_df[
+        op_result_df["黒字転換"]
+    ]
+    .copy()
+)
+
+
+# 黒字転換後の営業利益が大きい順
+turnaround_df = turnaround_df.sort_values(
+    "最新OP(億円)",
+    ascending=False,
+)
+
+
+st.dataframe(
+    turnaround_df,
+    use_container_width=True,
+    hide_index=True,
+)
+
+
+# =========================================================
+# 19. 増益ランキング
+# =========================================================
+
+st.write(
+    "### 🟢 営業利益 増益ランキング"
+)
+
+
+growth_df = (
+    op_result_df[
+        op_result_df["OP判定"]
+        == "🟢 増益"
+    ]
+    .copy()
+)
+
+
+growth_df = growth_df.sort_values(
+    "OP前年比(%)",
+    ascending=False,
+)
+
+
+st.dataframe(
+    growth_df.head(100),
+    use_container_width=True,
+    hide_index=True,
+)
