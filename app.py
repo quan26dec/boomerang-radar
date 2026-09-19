@@ -1310,3 +1310,93 @@ st.caption(
     f"🪃 現在までの処理時間："
     f"{bulk_elapsed:.1f}秒"
 )
+
+# =========================================================
+# STEP 7：財務Bulkファイル確認
+# =========================================================
+
+st.divider()
+st.subheader("🪃 STEP 7：全銘柄財務データ高速取得")
+
+st.write("📡 財務Bulkファイルを確認中...")
+
+
+# =========================================================
+# 財務Bulk一覧取得
+# =========================================================
+
+fin_bulk_response = requests.get(
+    "https://api.jquants.com/v2/bulk/list",
+    headers=headers,
+    params={
+        "endpoint": "/fins/summary"
+    },
+    timeout=30,
+)
+
+
+st.write(
+    "財務Bulk APIステータス:",
+    fin_bulk_response.status_code
+)
+
+
+if fin_bulk_response.status_code != 200:
+
+    st.error(
+        "財務Bulk一覧を取得できませんでした。"
+    )
+
+    st.write(
+        fin_bulk_response.text
+    )
+
+else:
+
+    fin_bulk_data = (
+        fin_bulk_response.json()
+    )
+
+    fin_bulk_files = (
+        fin_bulk_data.get(
+            "data",
+            []
+        )
+    )
+
+    if not fin_bulk_files:
+
+        st.warning(
+            "fins/summary のBulkファイルがありません。"
+        )
+
+    else:
+
+        st.success(
+            f"🪃 財務Bulk発見："
+            f"{len(fin_bulk_files)}ファイル"
+        )
+
+        # ---------------------------------------------
+        # Keyだけ確認
+        # ---------------------------------------------
+
+        fin_bulk_keys = [
+            item.get("Key")
+            for item in fin_bulk_files
+            if item.get("Key")
+        ]
+
+        st.write(
+            "### 📦 財務Bulkファイル"
+        )
+
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Key": fin_bulk_keys
+                }
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
