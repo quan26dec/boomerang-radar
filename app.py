@@ -1815,11 +1815,11 @@ st.dataframe(
 )
 
 # =========================================================
-# STEP 9：会社予想営業利益 FOP FOP Increase判定
+# STEP 9：営業利益 FOP FOP Increase判定
 # =========================================================
 
 st.divider()
-st.subheader("🪃 STEP 9：会社予想営業利益 FOP Increase判定")
+st.subheader("🪃 STEP 9：営業利益 FOP Increase判定")
 
 
 # ---------------------------------------------------------
@@ -2011,11 +2011,11 @@ else:
 
         elif latest_fop > prev_fop:
 
-            revision_type = "🟢 FOP Increase"
+            revision_type = "🟢 FOPI"
 
         elif latest_fop < prev_fop:
 
-            revision_type = "🔴 下方修正"
+            revision_type = "🔴 FOPD"
 
         else:
 
@@ -2161,7 +2161,7 @@ else:
         # -------------------------------------------------
 
         st.write(
-            "### 🟢 会社予想営業利益 FOP Increase"
+            "### 🟢 FOPI"
         )
 
         upward_display_df = (
@@ -2474,7 +2474,7 @@ def classify_boomerang(row):
     ):
         signals.append("🔥予想黒転")
 
-    elif row.get("会社予想FOP Increase", False):
+    elif row.get("FOPI", False):
         signals.append("🟢FOP Increase")
 
     if row.get("20日株価未反応", False):
