@@ -21,7 +21,7 @@ st.title("🪃 業績×株価乖離レーダー Ver.1")
 st.subheader("業績が改善しているのに、株価がまだ反応していない企業を探す")
 
 st.info(
-    "業績改善・上方修正・黒字転換と、"
+    "業績改善・FOP Increase・黒字転換と、"
     "株価20日・60日の動きを比較して乖離を観測します。"
 )
 
@@ -1815,11 +1815,11 @@ st.dataframe(
 )
 
 # =========================================================
-# STEP 9：会社予想営業利益 FOP 上方修正判定
+# STEP 9：会社予想営業利益 FOP FOP Increase判定
 # =========================================================
 
 st.divider()
-st.subheader("🪃 STEP 9：会社予想営業利益 上方修正判定")
+st.subheader("🪃 STEP 9：会社予想営業利益 FOP Increase判定")
 
 
 # ---------------------------------------------------------
@@ -2011,7 +2011,7 @@ else:
 
         elif latest_fop > prev_fop:
 
-            revision_type = "🟢 上方修正"
+            revision_type = "🟢 FOP Increase"
 
         elif latest_fop < prev_fop:
 
@@ -2104,7 +2104,7 @@ else:
 
 
         # -------------------------------------------------
-        # 上方修正のみ
+        # FOP Increaseのみ
         # -------------------------------------------------
 
         upward_df = revision_df[
@@ -2134,7 +2134,7 @@ else:
         with col2:
 
             st.metric(
-                "上方修正",
+                "FOP Increase",
                 f"{len(upward_df):,}銘柄"
             )
 
@@ -2157,11 +2157,11 @@ else:
 
 
         # -------------------------------------------------
-        # 上方修正一覧
+        # FOP Increase一覧
         # -------------------------------------------------
 
         st.write(
-            "### 🟢 会社予想営業利益 上方修正"
+            "### 🟢 会社予想営業利益 FOP Increase"
         )
 
         upward_display_df = (
@@ -2443,7 +2443,7 @@ boomerang_df["実績改善"] = (
     boomerang_df["前年OP(億円)"]
 )
 
-boomerang_df["会社予想上方修正"] = (
+boomerang_df["会社予想FOP Increase"] = (
     boomerang_df["LatestFOP"]
     >
     boomerang_df["PrevFOP"]
@@ -2453,7 +2453,7 @@ boomerang_df["20日株価未反応"] = (
     boomerang_df["Return20"] <= 0
 )
 
-boomerang_df["60日株価未反応"] = (
+boomerang_df["60日株価未反応"] = (FOP Increase
     boomerang_df["Return60"] <= 0
 )
 
@@ -2474,8 +2474,8 @@ def classify_boomerang(row):
     ):
         signals.append("🔥予想黒転")
 
-    elif row.get("会社予想上方修正", False):
-        signals.append("🟢上方修正")
+    elif row.get("会社予想FOP Increase", False):
+        signals.append("🟢FOP Increase")
 
     if row.get("20日株価未反応", False):
         signals.append("📉20日未反応")
@@ -2509,7 +2509,7 @@ boomerang_df["SignalCount"] = (
         [
             "実績改善",
             "黒字転換",
-            "会社予想上方修正",
+            "FOPI",
             "20日株価未反応",
             "60日株価未反応",
         ]
@@ -2536,7 +2536,7 @@ strong_candidate_df = valid_boomerang_df[
     (
         valid_boomerang_df["実績改善"]
         |
-        valid_boomerang_df["会社予想上方修正"]
+        valid_boomerang_df["FOPI"]
         |
         valid_boomerang_df["黒字転換"]
     )
