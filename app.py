@@ -2443,7 +2443,7 @@ boomerang_df["実績改善"] = (
     boomerang_df["前年OP(億円)"]
 )
 
-boomerang_df["会社予想FOP Increase"] = (
+boomerang_df["FOPI"] = (
     boomerang_df["LatestFOP"]
     >
     boomerang_df["PrevFOP"]
@@ -2453,7 +2453,7 @@ boomerang_df["20日株価未反応"] = (
     boomerang_df["Return20"] <= 0
 )
 
-boomerang_df["60日株価未反応"] = (FOP Increase
+boomerang_df["60日株価未反応"] = (
     boomerang_df["Return60"] <= 0
 )
 
