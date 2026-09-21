@@ -529,6 +529,11 @@ bulk_all_df["Close60"] = (
     .shift(60)
 )
 
+bulk_all_df["Close90"] = (
+    bulk_all_df
+    .groupby("Code")["AdjClose"]
+    .shift(90)
+)
 
 # =========================================================
 # 9. 各銘柄の最新行だけ取得
@@ -558,12 +563,20 @@ latest_price_df["Return20"] = (
     - 1
 ) * 100
 
-
 latest_price_df["Return60"] = (
     (
         latest_price_df["AdjClose"]
         /
         latest_price_df["Close60"]
+    )
+    - 1
+) * 100
+
+latest_price_df["Return90"] = (
+    (
+        latest_price_df["AdjClose"]
+        /
+        latest_price_df["Close90"]
     )
     - 1
 ) * 100
@@ -575,6 +588,7 @@ valid_price_df = (
         subset=[
             "Return20",
             "Return60",
+            "Return90",
         ]
     )
     .copy()
@@ -608,6 +622,7 @@ price_summary_df = (
             "C",
             "Return20",
             "Return60",
+            "Return90",
         ]
     ]
     .copy()
@@ -625,7 +640,7 @@ price_summary_df = (
 
 
 st.success(
-    f"⚡ 20日・60日計算成功："
+    f"⚡ 20日・60日・90日計算成功："
     f"{len(price_summary_df):,}銘柄"
 )
 
