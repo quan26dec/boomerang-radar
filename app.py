@@ -271,12 +271,15 @@ for i, bulk_item in enumerate(
         timeout=30,
     )
 
-    if item_get_response.status_code != 200:
-
+    if get_response.status_code != 200:
+    
         st.warning(
-            f"取得失敗：{item_key}"
+            f"取得失敗：{fin_key} "
+            f"/ status={get_response.status_code}"
         )
-
+    
+        st.code(get_response.text)
+    
         continue
 
     item_get_data = (
